@@ -1,0 +1,1 @@
+mkdir config && touch config/__init__.py config/settings.py
