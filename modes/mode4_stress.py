@@ -5,6 +5,10 @@ from pathlib import Path
 from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
+from guardrails.input_guard import validate_mode4_input
+from guardrails.degradation import llm_fallback_response, check_session_health
+
+PROMPT_VERSION = "mode4_v1"
 
 
 def load_prompt() -> str:
@@ -16,11 +20,22 @@ def stress_test_conclusion(
     context: ContextBrief,
     state: AnalyticalState,
 ) -> dict:
-    """
-    Mode 4: Adversarially stress-test a stated conclusion.
-    This mode is the proof of thought partner value — it references
-    the session's own hypotheses against the analyst's conclusion.
-    """
+    # ── Ring 1: Input validation ─────────────────────────────────
+    validation = validate_mode4_input(conclusion)
+    if not validation.is_valid:
+        return {
+            "_validation_error": validation.error,
+            "hypotheses_referenced": [],
+            "flaws": [],
+            "ignored_ruled_out_hypotheses": None,
+            "verdict": "INVALID INPUT",
+            "verdict_reason": validation.error,
+            "strengthening_analysis": "",
+        }
+
+    # Session health check — warn if operating without context
+    health = check_session_health(state)
+
     system_prompt = f"""
 {load_prompt()}
 
@@ -31,14 +46,18 @@ def stress_test_conclusion(
 {state.to_prompt_block()}
 """
 
-    raw_output = call_llm(
-        system_prompt=system_prompt,
-        user_message=f"Stress-test this conclusion: {conclusion}",
-    )
+    # ── Ring 3: LLM call with fallback ───────────────────────────
+    try:
+        raw_output = call_llm(
+            system_prompt=system_prompt,
+            user_message=f"Stress-test this conclusion: {conclusion}",
+            mode="mode4_stress_test",
+            prompt_version=PROMPT_VERSION,
+        )
+    except Exception as e:
+        return llm_fallback_response("mode4_stress_test", str(e))
 
     result = _parse_json(raw_output)
-
-    # Log to thread — Mode 4 doesn't add hypotheses but records conclusions
     state.conclusions_stated.append(conclusion)
     state.add_event(
         mode="mode4_stress_test",
@@ -46,56 +65,35 @@ def stress_test_conclusion(
         agent_output=raw_output,
     )
 
+    if validation.warning:
+        result["_warning"] = validation.warning
+    if not health["is_healthy"]:
+        result["_session_warnings"] = health["warnings"]
+
     return result
 
 
 def _parse_json(raw: str) -> dict:
     cleaned = raw.strip()
-    
-    # Strip markdown fences
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        # find the first { and last }
         cleaned = "\n".join(lines[1:-1])
-
-    # Find the JSON object boundaries robustly
     start = cleaned.find("{")
     end = cleaned.rfind("}") + 1
     if start == -1 or end == 0:
-        return _error_response(f"No JSON object found in output")
-    
-    json_str = cleaned[start:end]
-    
+        return _error_response("No JSON found")
     try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        # Last resort: extract code field separately, then parse the rest
-        try:
-            import re
-            # Pull out the code value before JSON parsing
-            code_match = re.search(
-                r'"code"\s*:\s*"(.*?)",\s*"interpretation_guide"',
-                json_str,
-                re.DOTALL,
-            )
-            if code_match:
-                raw_code = code_match.group(1)
-                # Replace the raw code block with a placeholder
-                safe_code = raw_code.replace("\n", "\\n").replace("\t", "\\t")
-                json_str = json_str[:code_match.start(1)] + safe_code + json_str[code_match.end(1):]
-            return json.loads(json_str)
-        except Exception as e:
-            return _error_response(str(e), raw)
+        return json.loads(cleaned[start:end])
+    except json.JSONDecodeError as e:
+        return _error_response(str(e), raw)
 
 
 def _error_response(reason: str, raw: str = "") -> dict:
     return {
-        "hypothesis_tested": None,
-        "language": "unknown",
-        "assumptions": [],
-        "code": "",
-        "interpretation_guide": "",
-        "destructive_operation_detected": False,
-        "refusal_reason": f"parse error: {reason}",
-        "_raw": raw,
+        "hypotheses_referenced": [],
+        "flaws": [],
+        "ignored_ruled_out_hypotheses": None,
+        "verdict": "PARSE ERROR",
+        "verdict_reason": str(reason),
+        "strengthening_analysis": "retry with clearer conclusion statement",
     }

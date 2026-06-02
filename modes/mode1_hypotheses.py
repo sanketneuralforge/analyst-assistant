@@ -5,6 +5,11 @@ from pathlib import Path
 from core.context import ContextBrief
 from core.session import AnalyticalState, Hypothesis
 from core.llm import call_llm
+from rag.retriever import retrieve_domain_context
+from guardrails.input_guard import validate_mode1_input
+from guardrails.degradation import llm_fallback_response
+
+PROMPT_VERSION = "mode1_v1"
 
 
 def load_prompt() -> str:
@@ -16,10 +21,21 @@ def generate_hypotheses(
     context: ContextBrief,
     state: AnalyticalState,
 ) -> dict:
-    """
-    Mode 1: Generate ranked hypotheses for a pattern or question.
-    Updates AnalyticalState in place after the call.
-    """
+    # ── Ring 1: Input validation ─────────────────────────────────
+    validation = validate_mode1_input(user_input)
+    if not validation.is_valid:
+        return {
+            "_validation_error": validation.error,
+            "contradiction_flag": None,
+            "hypotheses": [],
+            "open_questions": [],
+            "current_focus_update": "validation failed",
+        }
+
+    # ── Ring 1: RAG retrieval ────────────────────────────────────
+    retrieval_query = f"{context.primary_metric} {context.domain} {user_input[:200]}"
+    domain_context = retrieve_domain_context(retrieval_query)
+
     system_prompt = f"""
 {load_prompt()}
 
@@ -29,69 +45,52 @@ def generate_hypotheses(
 ---
 {state.to_prompt_block()}
 """
+    augmented_input = user_input
+    if domain_context:
+        augmented_input = f"{domain_context}\n\n---\n\nANALYST QUESTION:\n{user_input}"
 
-    raw_output = call_llm(
-        system_prompt=system_prompt,
-        user_message=user_input,
-    )
+    # ── Ring 3: LLM call with fallback ───────────────────────────
+    try:
+        raw_output = call_llm(
+            system_prompt=system_prompt,
+            user_message=augmented_input,
+            mode="mode1_hypotheses",
+            prompt_version=PROMPT_VERSION,
+        )
+    except Exception as e:
+        return llm_fallback_response("mode1_hypotheses", str(e))
 
-    # Parse structured output
     result = _parse_json(raw_output)
-
-    # Update AnalyticalState from the result
     _update_state(state, result, user_input, raw_output)
+
+    # Attach validation warning if any
+    if validation.warning:
+        result["_warning"] = validation.warning
 
     return result
 
 
 def _parse_json(raw: str) -> dict:
     cleaned = raw.strip()
-    
-    # Strip markdown fences
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        # find the first { and last }
         cleaned = "\n".join(lines[1:-1])
-
-    # Find the JSON object boundaries robustly
     start = cleaned.find("{")
     end = cleaned.rfind("}") + 1
     if start == -1 or end == 0:
-        return _error_response(f"No JSON object found in output")
-    
-    json_str = cleaned[start:end]
-    
+        return _error_response("No JSON found")
     try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        # Last resort: extract code field separately, then parse the rest
-        try:
-            import re
-            # Pull out the code value before JSON parsing
-            code_match = re.search(
-                r'"code"\s*:\s*"(.*?)",\s*"interpretation_guide"',
-                json_str,
-                re.DOTALL,
-            )
-            if code_match:
-                raw_code = code_match.group(1)
-                # Replace the raw code block with a placeholder
-                safe_code = raw_code.replace("\n", "\\n").replace("\t", "\\t")
-                json_str = json_str[:code_match.start(1)] + safe_code + json_str[code_match.end(1):]
-            return json.loads(json_str)
-        except Exception as e:
-            return _error_response(str(e), raw)
+        return json.loads(cleaned[start:end])
+    except json.JSONDecodeError as e:
+        return _error_response(str(e), raw)
 
 
 def _error_response(reason: str, raw: str = "") -> dict:
     return {
-        "hypothesis_tested": None,
-        "language": "unknown",
-        "assumptions": [],
-        "code": "",
-        "interpretation_guide": "",
-        "destructive_operation_detected": False,
-        "refusal_reason": f"parse error: {reason}",
+        "contradiction_flag": None,
+        "hypotheses": [],
+        "open_questions": [f"parse error: {reason}"],
+        "current_focus_update": "parse error",
         "_raw": raw,
     }
 
@@ -102,9 +101,6 @@ def _update_state(
     user_input: str,
     raw_output: str,
 ):
-    """Write mode 1 findings back into the shared AnalyticalState."""
-
-    # Add new hypotheses (avoid duplicates)
     existing_texts = {h.text for h in state.hypotheses}
     for h in result.get("hypotheses", []):
         if h["text"] not in existing_texts:
@@ -114,15 +110,9 @@ def _update_state(
                 supporting_evidence=h.get("supporting_evidence", []),
                 contradicting_evidence=h.get("contradicting_evidence", []),
             ))
-
-    # Add open questions
     state.open_questions.extend(result.get("open_questions", []))
-
-    # Update focus
     if focus := result.get("current_focus_update"):
         state.current_focus = focus
-
-    # Log event to thread
     state.add_event(
         mode="mode1_hypotheses",
         user_input=user_input,

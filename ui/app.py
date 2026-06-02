@@ -71,7 +71,29 @@ def render_nudges(suggestions: list[dict]):
         with st.expander(f"{icon} {s['action']}"):
             st.caption(s["reason"])
 
+# Add to ui/app.py after render_nudges()
 
+def render_validation_error(result: dict):
+    """Show validation or guardrail errors prominently."""
+    if err := result.get("_validation_error"):
+        st.error(f"⛔ {err}")
+        return True
+    if err := result.get("_error"):
+        if not err.startswith("parse"):  # parse errors shown differently
+            st.error(f"⛔ {err}")
+            return True
+    return False
+
+def render_warnings(result: dict):
+    """Show non-blocking warnings."""
+    if w := result.get("_warning"):
+        st.warning(f"💡 {w}")
+    if ws := result.get("_session_warnings", []):
+        for w in ws:
+            st.warning(f"⚠️ Session: {w}")
+    if cw := result.get("_code_warnings", []):
+        for w in cw:
+            st.warning(f"⚠️ Code: {w}")
 # ════════════════════════════════════════════════════════════════
 # SIDEBAR
 # ════════════════════════════════════════════════════════════════
@@ -331,8 +353,10 @@ Co-moving metrics:
                 st.session_state.last_suggestions = suggestions
                 st.session_state.mode1_result = result
 
-    if st.session_state.mode1_result:
+    if st.session_state.mode1_result is not None:
         result = st.session_state.mode1_result
+        render_validation_error(result)
+        render_warnings(result)
 
         if result.get("contradiction_flag"):
             st.error(f"⚠️ Contradiction detected: {result['contradiction_flag']}")
@@ -393,8 +417,9 @@ with tab2:
                 suggestions = get_proactive_suggestions(state)
                 st.session_state.last_suggestions = suggestions
 
-    if st.session_state.mode2_result:
+    if st.session_state.mode2_result is not None:
         result = st.session_state.mode2_result
+        render_validation_error(result)
 
         if result.get("refusal_reason") and result["refusal_reason"] not in ["null", None, ""]:
             st.error(f"⚠️ {result['refusal_reason']}")
@@ -472,8 +497,10 @@ with tab3:
                 st.session_state.last_suggestions = suggestions
                 st.session_state.mode3_result = result
 
-    if st.session_state.mode3_result:
-        result = st.session_state.mode3_result
+    if st.session_state.mode3_result is not None:
+        result = st.session_state.mode1_result
+        render_validation_error(result)
+        render_warnings(result)
 
         if "_error" in result:
             st.error(result["_error"])
@@ -553,8 +580,10 @@ with tab4:
                 st.session_state.last_suggestions = suggestions
                 st.session_state.mode4_result = result
 
-    if st.session_state.mode4_result:
-        result = st.session_state.mode4_result
+    if st.session_state.mode4_result is not None:
+        result = st.session_state.mode1_result
+        render_validation_error(result)
+        render_warnings(result)
 
         verdict = result.get("verdict", "UNKNOWN")
         verdict_color = (
@@ -616,8 +645,10 @@ with tab5:
             )
             st.session_state.mode5_result = result
 
-    if st.session_state.mode5_result:
-        result = st.session_state.mode5_result
+    if st.session_state.mode5_result is not None:
+        result = st.session_state.mode1_result
+        render_validation_error(result)
+        render_warnings(result)
 
         st.subheader("Narrative")
         st.markdown(result.get("narrative", ""))
