@@ -1,0 +1,6 @@
+[server]
+fileWatcherType = "none"
+
+[logger]
+level = "error"
+messageFormat = "%(message)s"
