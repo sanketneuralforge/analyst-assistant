@@ -1,4 +1,4 @@
-# modes/mode4_stress.py
+# modes/mode3_synthesis.py
 
 import json
 from pathlib import Path
@@ -6,21 +6,40 @@ from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
 
+PROMPT_VERSION = "mode3_v1"
+
 
 def load_prompt() -> str:
-    return Path("prompts/mode4_v1.txt").read_text()
+    return Path(f"prompts/{PROMPT_VERSION}.txt").read_text()
 
 
-def stress_test_conclusion(
-    conclusion: str,
+def synthesise_docs(
+    documents: list[str],
     context: ContextBrief,
     state: AnalyticalState,
 ) -> dict:
     """
-    Mode 4: Adversarially stress-test a stated conclusion.
-    This mode is the proof of thought partner value — it references
-    the session's own hypotheses against the analyst's conclusion.
+    Mode 3: Synthesise multiple documents, detect contradictions,
+    cross-reference against analytical state.
     """
+    if len(documents) < 2:
+        return {
+            "source_count": len(documents),
+            "facts": [],
+            "inferences": [],
+            "gaps": [],
+            "conflicts": [],
+            "synthesis_summary": "",
+            "state_contradictions": None,
+            "_error": "Provide at least 2 documents for synthesis.",
+        }
+
+    # Format documents as numbered sources
+    formatted_docs = "\n\n".join([
+        f"SOURCE {i+1}:\n{doc}"
+        for i, doc in enumerate(documents)
+    ])
+
     system_prompt = f"""
 {load_prompt()}
 
@@ -33,16 +52,24 @@ def stress_test_conclusion(
 
     raw_output = call_llm(
         system_prompt=system_prompt,
-        user_message=f"Stress-test this conclusion: {conclusion}",
+        user_message=formatted_docs,
+        mode="mode3_synthesis",
+        prompt_version=PROMPT_VERSION,
     )
 
     result = _parse_json(raw_output)
 
-    # Log to thread — Mode 4 doesn't add hypotheses but records conclusions
-    state.conclusions_stated.append(conclusion)
+    # Add facts to evidence collected
+    for fact in result.get("facts", []):
+        state.evidence_collected.append(fact)
+
+    # Add gaps to open questions
+    for gap in result.get("gaps", []):
+        state.open_questions.append(gap)
+
     state.add_event(
-        mode="mode4_stress_test",
-        user_input=conclusion,
+        mode="mode3_synthesis",
+        user_input=f"{len(documents)} documents provided",
         agent_output=raw_output,
     )
 

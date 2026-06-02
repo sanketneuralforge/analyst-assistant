@@ -1,4 +1,4 @@
-# modes/mode4_stress.py
+# modes/mode5_narrative.py
 
 import json
 from pathlib import Path
@@ -6,20 +6,22 @@ from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
 
+PROMPT_VERSION = "mode5_v1"
+
 
 def load_prompt() -> str:
-    return Path("prompts/mode4_v1.txt").read_text()
+    return Path(f"prompts/{PROMPT_VERSION}.txt").read_text()
 
 
-def stress_test_conclusion(
-    conclusion: str,
+def draft_narrative(
+    user_input: str,
     context: ContextBrief,
     state: AnalyticalState,
 ) -> dict:
     """
-    Mode 4: Adversarially stress-test a stated conclusion.
-    This mode is the proof of thought partner value — it references
-    the session's own hypotheses against the analyst's conclusion.
+    Mode 5: Write an audience-aware narrative from the full session.
+    Draws on everything in AnalyticalState — hypotheses, evidence,
+    conclusions, stress-test verdicts. Flags unverified claims inline.
     """
     system_prompt = f"""
 {load_prompt()}
@@ -33,16 +35,16 @@ def stress_test_conclusion(
 
     raw_output = call_llm(
         system_prompt=system_prompt,
-        user_message=f"Stress-test this conclusion: {conclusion}",
+        user_message=user_input,
+        mode="mode5_narrative",
+        prompt_version=PROMPT_VERSION,
     )
 
     result = _parse_json(raw_output)
 
-    # Log to thread — Mode 4 doesn't add hypotheses but records conclusions
-    state.conclusions_stated.append(conclusion)
     state.add_event(
-        mode="mode4_stress_test",
-        user_input=conclusion,
+        mode="mode5_narrative",
+        user_input=user_input,
         agent_output=raw_output,
     )
 

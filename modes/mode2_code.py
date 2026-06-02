@@ -1,4 +1,4 @@
-# modes/mode4_stress.py
+# modes/mode2_code.py
 
 import json
 from pathlib import Path
@@ -6,20 +6,22 @@ from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
 
+PROMPT_VERSION = "mode2_v1"
+
 
 def load_prompt() -> str:
-    return Path("prompts/mode4_v1.txt").read_text()
+    return Path(f"prompts/{PROMPT_VERSION}.txt").read_text()
 
 
-def stress_test_conclusion(
-    conclusion: str,
+def draft_code(
+    user_input: str,
     context: ContextBrief,
     state: AnalyticalState,
 ) -> dict:
     """
-    Mode 4: Adversarially stress-test a stated conclusion.
-    This mode is the proof of thought partner value — it references
-    the session's own hypotheses against the analyst's conclusion.
+    Mode 2: Draft executable code targeting the highest-confidence
+    active hypothesis. Enforces review gate — the caller (UI) is
+    responsible for disabling copy until the analyst confirms review.
     """
     system_prompt = f"""
 {load_prompt()}
@@ -33,18 +35,23 @@ def stress_test_conclusion(
 
     raw_output = call_llm(
         system_prompt=system_prompt,
-        user_message=f"Stress-test this conclusion: {conclusion}",
+        user_message=user_input,
+        mode="mode2_code",
+        prompt_version=PROMPT_VERSION,
     )
 
     result = _parse_json(raw_output)
 
-    # Log to thread — Mode 4 doesn't add hypotheses but records conclusions
-    state.conclusions_stated.append(conclusion)
+    # Update state
     state.add_event(
-        mode="mode4_stress_test",
-        user_input=conclusion,
+        mode="mode2_code",
+        user_input=user_input,
         agent_output=raw_output,
     )
+
+    # If code targets a hypothesis, log it as investigated
+    if h := result.get("hypothesis_tested"):
+        state.investigated_paths.append(f"Code written to test: {h}")
 
     return result
 
