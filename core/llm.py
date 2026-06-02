@@ -2,7 +2,8 @@
 
 import os
 import time
-from groq import Groq
+import random
+from groq import Groq, RateLimitError
 from dotenv import load_dotenv
 from config.settings import settings
 from core.logger import log_call
@@ -23,35 +24,42 @@ def call_llm(
     mode: str = "unknown",
     prompt_version: str = "unknown",
     temperature: float | None = None,
+    max_retries: int = 3,
 ) -> str:
-    """
-    Single entry point for all LLM calls.
-    Now times every call and logs to SQLite automatically.
-    """
     client = get_client()
     temp = temperature if temperature is not None else settings.groq_temperature
 
-    start = time.time()
-    response = client.chat.completions.create(
-        model=settings.groq_model,
-        temperature=temp,
-        max_tokens=settings.groq_max_tokens,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
-    )
-    latency_ms = int((time.time() - start) * 1000)
+    for attempt in range(max_retries):
+        try:
+            start = time.time()
+            response = client.chat.completions.create(
+                model=settings.groq_model,
+                temperature=temp,
+                max_tokens=settings.groq_max_tokens,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+            )
+            latency_ms = int((time.time() - start) * 1000)
+            output = response.choices[0].message.content
 
-    output = response.choices[0].message.content
+            log_call(
+                mode=mode,
+                prompt_version=prompt_version,
+                user_input=user_message,
+                full_output=output,
+                latency_ms=latency_ms,
+                model=settings.groq_model,
+            )
+            return output
 
-    log_call(
-        mode=mode,
-        prompt_version=prompt_version,
-        user_input=user_message,
-        full_output=output,
-        latency_ms=latency_ms,
-        model=settings.groq_model,
-    )
+        except RateLimitError as e:
+            if attempt == max_retries - 1:
+                raise  # re-raise on final attempt
+            # Exponential backoff with jitter
+            wait = (2 ** attempt) + random.uniform(0, 1)
+            print(f"  [rate limit] attempt {attempt+1}/{max_retries} — waiting {wait:.1f}s")
+            time.sleep(wait)
 
-    return output
+    raise RuntimeError("LLM call failed after all retries")
