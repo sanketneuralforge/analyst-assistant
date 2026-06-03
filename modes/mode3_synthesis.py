@@ -5,7 +5,9 @@ from pathlib import Path
 from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
+from core.token_budget import trim_analytical_state
 from guardrails.input_guard import validate_mode3_input
+from core.token_budget import trim_analytical_state
 from guardrails.degradation import llm_fallback_response
 
 PROMPT_VERSION = "mode3_v1"
@@ -47,7 +49,7 @@ def synthesise_docs(
 {context.to_prompt_block()}
 
 ---
-{state.to_prompt_block()}
+{trim_analytical_state(state)}
 """
 
     # ── Ring 3: LLM call with fallback ───────────────────────────

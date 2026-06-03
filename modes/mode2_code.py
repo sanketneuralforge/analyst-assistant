@@ -7,8 +7,11 @@ from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
 from rag.retriever import retrieve_statistical_method
+from core.token_budget import trim_analytical_state
 from guardrails.input_guard import validate_mode2_input
+from core.token_budget import trim_analytical_state
 from guardrails.output_guard import scan_code
+from core.token_budget import trim_analytical_state
 from guardrails.degradation import llm_fallback_response
 
 PROMPT_VERSION = "mode2_v1"
@@ -46,7 +49,7 @@ def draft_code(
 {context.to_prompt_block()}
 
 ---
-{state.to_prompt_block()}
+{trim_analytical_state(state)}
 """
     augmented_input = user_input
     if method_context:

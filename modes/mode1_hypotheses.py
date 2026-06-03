@@ -6,7 +6,9 @@ from core.context import ContextBrief
 from core.session import AnalyticalState, Hypothesis
 from core.llm import call_llm
 from rag.retriever import retrieve_domain_context
+from core.token_budget import trim_analytical_state
 from guardrails.input_guard import validate_mode1_input
+from core.token_budget import trim_analytical_state
 from guardrails.degradation import llm_fallback_response
 
 PROMPT_VERSION = "mode1_v1"
@@ -43,7 +45,7 @@ def generate_hypotheses(
 {context.to_prompt_block()}
 
 ---
-{state.to_prompt_block()}
+{trim_analytical_state(state)}
 """
     augmented_input = user_input
     if domain_context:

@@ -59,6 +59,19 @@ if "mode5_result" not in st.session_state:
 if "last_suggestions" not in st.session_state:
     st.session_state.last_suggestions = []
 
+if "session_id" not in st.session_state:
+    import uuid
+    st.session_state.session_id = str(uuid.uuid4())[:8]
+
+def checkpoint_session():
+    """Save current session state to SQLite checkpoint."""
+    from core.checkpoint import save_checkpoint, init_checkpoint_db
+    init_checkpoint_db()
+    save_checkpoint(
+        st.session_state.session_id,
+        st.session_state.analytical_state,
+    )
+
 
 # ── Helper: render proactive nudges ─────────────────────────────
 def render_nudges(suggestions: list[dict]):
@@ -259,9 +272,64 @@ with st.sidebar:
     except Exception:
         pass
 
+# ── Token budget indicator ───────────────────────────────────
+    if st.session_state.briefed:
+        from core.token_budget import get_session_token_summary
+        token_summary = get_session_token_summary(
+            st.session_state.analytical_state
+        )
+        budget_pct = token_summary["budget_used_pct"]
+        color = (
+            "🟢" if budget_pct < 60
+            else "🟡" if budget_pct < 85
+            else "🔴"
+        )
+        st.caption(
+            f"{color} Token budget: **{budget_pct}%** used "
+            f"({'trimmed' if token_summary['is_trimmed'] else 'full state'})"
+        )
+
+    # ── Session Resume ───────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("💾 Checkpoints")
+    from core.checkpoint import list_checkpoints, load_checkpoint, init_checkpoint_db
+    init_checkpoint_db()
+    checkpoints = list_checkpoints()
+
+    if checkpoints:
+        options = {
+            f"Turn {c['turn']} — {c['updated_at'][:16]} — ID: {c['session_id']}": c['session_id']
+            for c in checkpoints
+        }
+        selected = st.selectbox(
+            "Resume a past session",
+            ["— select —"] + list(options.keys()),
+            key="checkpoint_select",
+        )
+        if st.button("▶️ Resume Session", use_container_width=True):
+            if selected != "— select —":
+                session_id = options[selected]
+                restored = load_checkpoint(session_id)
+                if restored:
+                    st.session_state.analytical_state = restored
+                    st.session_state.session_id = session_id
+                    st.session_state.mode1_result = None
+                    st.session_state.mode2_result = None
+                    st.session_state.mode3_result = None
+                    st.session_state.mode4_result = None
+                    st.session_state.mode5_result = None
+                    st.success(
+                        f"✅ Resumed — {restored.session_turn} turns restored"
+                    )
+                    st.rerun()
+    else:
+        st.caption("No saved sessions yet.")
+
     # ── Reset ────────────────────────────────────────────────────
     st.markdown("---")
     if st.button("🔄 Reset Session", use_container_width=True):
+        from core.checkpoint import delete_checkpoint
+        delete_checkpoint(st.session_state.session_id)
         st.session_state.analytical_state = AnalyticalState()
         st.session_state.briefed = False
         st.session_state.context_brief = None
@@ -272,6 +340,7 @@ with st.sidebar:
         st.session_state.mode4_result = None
         st.session_state.mode5_result = None
         st.session_state.last_suggestions = []
+        st.session_state.session_id = __import__('uuid').uuid4().hex[:8]
         st.rerun()
 
 
@@ -352,6 +421,7 @@ Co-moving metrics:
                 suggestions = get_proactive_suggestions(state)
                 st.session_state.last_suggestions = suggestions
                 st.session_state.mode1_result = result
+                checkpoint_session() 
 
     if st.session_state.mode1_result is not None:
         result = st.session_state.mode1_result
@@ -416,6 +486,8 @@ with tab2:
                 st.session_state.mode2_reviewed = False
                 suggestions = get_proactive_suggestions(state)
                 st.session_state.last_suggestions = suggestions
+                checkpoint_session()
+                
 
     if st.session_state.mode2_result is not None:
         result = st.session_state.mode2_result
@@ -496,6 +568,7 @@ with tab3:
                 suggestions = get_proactive_suggestions(state)
                 st.session_state.last_suggestions = suggestions
                 st.session_state.mode3_result = result
+                checkpoint_session()
 
     if st.session_state.mode3_result is not None:
         result = st.session_state.mode3_result
@@ -579,6 +652,7 @@ with tab4:
                 suggestions = get_proactive_suggestions(state)
                 st.session_state.last_suggestions = suggestions
                 st.session_state.mode4_result = result
+                checkpoint_session()
 
     if st.session_state.mode4_result is not None:
         result = st.session_state.mode4_result
@@ -644,6 +718,7 @@ with tab5:
                 state=state,
             )
             st.session_state.mode5_result = result
+            checkpoint_session()
 
     if st.session_state.mode5_result is not None:
         result = st.session_state.mode5_result
