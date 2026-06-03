@@ -5,10 +5,9 @@ from pathlib import Path
 from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
-from core.token_budget import trim_analytical_state
 from guardrails.input_guard import validate_mode5_input
-from core.token_budget import trim_analytical_state
 from guardrails.degradation import llm_fallback_response, check_session_health
+from core.token_budget import trim_analytical_state
 
 PROMPT_VERSION = "mode5_v1"
 
@@ -21,8 +20,8 @@ def draft_narrative(
     user_input: str,
     context: ContextBrief,
     state: AnalyticalState,
+    tracer=None,
 ) -> dict:
-    # ── Ring 1: Input validation ─────────────────────────────────
     validation = validate_mode5_input(user_input)
     if not validation.is_valid:
         return {
@@ -47,7 +46,15 @@ def draft_narrative(
 {trim_analytical_state(state)}
 """
 
-    # ── Ring 3: LLM call with fallback ───────────────────────────
+    span = tracer.start_span(
+        "mode5_narrative",
+        model="llama-3.1-8b-instant",
+        metadata={
+            "audience": context.audience,
+            "session_turn": state.session_turn,
+        },
+    ) if tracer else None
+
     try:
         raw_output = call_llm(
             system_prompt=system_prompt,
@@ -55,7 +62,13 @@ def draft_narrative(
             mode="mode5_narrative",
             prompt_version=PROMPT_VERSION,
         )
+        if span:
+            span.estimate_tokens(user_input, raw_output)
+            tracer.finish_span(span, status="success")
+
     except Exception as e:
+        if span:
+            tracer.finish_span(span, status="error", error=str(e))
         return llm_fallback_response("mode5_narrative", str(e))
 
     result = _parse_json(raw_output)

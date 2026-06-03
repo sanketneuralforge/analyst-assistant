@@ -59,6 +59,9 @@ if "mode5_result" not in st.session_state:
 if "last_suggestions" not in st.session_state:
     st.session_state.last_suggestions = []
 
+if "current_tracer" not in st.session_state:
+    st.session_state.current_tracer = None
+
 if "session_id" not in st.session_state:
     import uuid
     st.session_state.session_id = str(uuid.uuid4())[:8]
@@ -72,6 +75,14 @@ def checkpoint_session():
         st.session_state.analytical_state,
     )
 
+def get_or_create_tracer():
+    """Get the current run tracer, creating one if needed."""
+    from observability.tracer import RunTracer
+    if st.session_state.current_tracer is None:
+        st.session_state.current_tracer = RunTracer(
+            session_id=st.session_state.session_id
+        )
+    return st.session_state.current_tracer
 
 # ── Helper: render proactive nudges ─────────────────────────────
 def render_nudges(suggestions: list[dict]):
@@ -417,6 +428,7 @@ Co-moving metrics:
                     user_input=user_input,
                     context=context,
                     state=state,
+                    tracer=get_or_create_tracer(),
                 )
                 suggestions = get_proactive_suggestions(state)
                 st.session_state.last_suggestions = suggestions
@@ -481,6 +493,7 @@ with tab2:
                     user_input=code_input,
                     context=context,
                     state=state,
+                    tracer=get_or_create_tracer(),
                 )
                 st.session_state.mode2_result = result
                 st.session_state.mode2_reviewed = False
@@ -564,6 +577,7 @@ with tab3:
                     documents=docs,
                     context=context,
                     state=state,
+                    tracer=get_or_create_tracer(),
                 )
                 suggestions = get_proactive_suggestions(state)
                 st.session_state.last_suggestions = suggestions
@@ -648,6 +662,7 @@ with tab4:
                     conclusion=conclusion_input,
                     context=context,
                     state=state,
+                    tracer=get_or_create_tracer(),
                 )
                 suggestions = get_proactive_suggestions(state)
                 st.session_state.last_suggestions = suggestions
@@ -716,6 +731,7 @@ with tab5:
                 user_input=focus,
                 context=context,
                 state=state,
+                tracer=get_or_create_tracer(),
             )
             st.session_state.mode5_result = result
             checkpoint_session()

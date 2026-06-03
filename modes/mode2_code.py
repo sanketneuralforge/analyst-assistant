@@ -7,12 +7,10 @@ from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
 from rag.retriever import retrieve_statistical_method
-from core.token_budget import trim_analytical_state
 from guardrails.input_guard import validate_mode2_input
-from core.token_budget import trim_analytical_state
 from guardrails.output_guard import scan_code
-from core.token_budget import trim_analytical_state
 from guardrails.degradation import llm_fallback_response
+from core.token_budget import trim_analytical_state
 
 PROMPT_VERSION = "mode2_v1"
 
@@ -25,8 +23,8 @@ def draft_code(
     user_input: str,
     context: ContextBrief,
     state: AnalyticalState,
+    tracer=None,
 ) -> dict:
-    # ── Ring 1: Input validation ─────────────────────────────────
     validation = validate_mode2_input(user_input)
     if not validation.is_valid:
         return {
@@ -60,7 +58,12 @@ def draft_code(
             f"ANALYST REQUEST:\n{user_input}"
         )
 
-    # ── Ring 3: LLM call with fallback ───────────────────────────
+    span = tracer.start_span(
+        "mode2_code",
+        model="llama-3.3-70b-versatile",
+        metadata={"session_turn": state.session_turn},
+    ) if tracer else None
+
     try:
         raw_output = call_llm(
             system_prompt=system_prompt,
@@ -68,12 +71,18 @@ def draft_code(
             mode="mode2_code",
             prompt_version=PROMPT_VERSION,
         )
+        if span:
+            span.estimate_tokens(augmented_input, raw_output)
+            tracer.finish_span(span, status="success")
+
     except Exception as e:
+        if span:
+            tracer.finish_span(span, status="error", error=str(e))
         return llm_fallback_response("mode2_code", str(e))
 
     result = _parse_json(raw_output)
 
-    # ── Ring 4: Output scanning ───────────────────────────────────
+    # Ring 4: Output scanning
     code = result.get("code", "")
     if code:
         scan = scan_code(code, language=result.get("language", "python"))

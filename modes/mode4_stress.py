@@ -5,10 +5,9 @@ from pathlib import Path
 from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
-from core.token_budget import trim_analytical_state
 from guardrails.input_guard import validate_mode4_input
-from core.token_budget import trim_analytical_state
 from guardrails.degradation import llm_fallback_response, check_session_health
+from core.token_budget import trim_analytical_state
 
 PROMPT_VERSION = "mode4_v1"
 
@@ -21,8 +20,8 @@ def stress_test_conclusion(
     conclusion: str,
     context: ContextBrief,
     state: AnalyticalState,
+    tracer=None,
 ) -> dict:
-    # ── Ring 1: Input validation ─────────────────────────────────
     validation = validate_mode4_input(conclusion)
     if not validation.is_valid:
         return {
@@ -35,7 +34,6 @@ def stress_test_conclusion(
             "strengthening_analysis": "",
         }
 
-    # Session health check — warn if operating without context
     health = check_session_health(state)
 
     system_prompt = f"""
@@ -48,7 +46,15 @@ def stress_test_conclusion(
 {trim_analytical_state(state)}
 """
 
-    # ── Ring 3: LLM call with fallback ───────────────────────────
+    span = tracer.start_span(
+        "mode4_stress_test",
+        model="llama-3.3-70b-versatile",
+        metadata={
+            "hypotheses_count": len(state.hypotheses),
+            "session_turn": state.session_turn,
+        },
+    ) if tracer else None
+
     try:
         raw_output = call_llm(
             system_prompt=system_prompt,
@@ -56,7 +62,13 @@ def stress_test_conclusion(
             mode="mode4_stress_test",
             prompt_version=PROMPT_VERSION,
         )
+        if span:
+            span.estimate_tokens(conclusion, raw_output)
+            tracer.finish_span(span, status="success")
+
     except Exception as e:
+        if span:
+            tracer.finish_span(span, status="error", error=str(e))
         return llm_fallback_response("mode4_stress_test", str(e))
 
     result = _parse_json(raw_output)

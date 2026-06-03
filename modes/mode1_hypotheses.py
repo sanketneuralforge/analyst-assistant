@@ -6,10 +6,9 @@ from core.context import ContextBrief
 from core.session import AnalyticalState, Hypothesis
 from core.llm import call_llm
 from rag.retriever import retrieve_domain_context
-from core.token_budget import trim_analytical_state
 from guardrails.input_guard import validate_mode1_input
-from core.token_budget import trim_analytical_state
 from guardrails.degradation import llm_fallback_response
+from core.token_budget import trim_analytical_state
 
 PROMPT_VERSION = "mode1_v1"
 
@@ -22,8 +21,8 @@ def generate_hypotheses(
     user_input: str,
     context: ContextBrief,
     state: AnalyticalState,
+    tracer=None,
 ) -> dict:
-    # ── Ring 1: Input validation ─────────────────────────────────
     validation = validate_mode1_input(user_input)
     if not validation.is_valid:
         return {
@@ -34,7 +33,6 @@ def generate_hypotheses(
             "current_focus_update": "validation failed",
         }
 
-    # ── Ring 1: RAG retrieval ────────────────────────────────────
     retrieval_query = f"{context.primary_metric} {context.domain} {user_input[:200]}"
     domain_context = retrieve_domain_context(retrieval_query)
 
@@ -51,7 +49,12 @@ def generate_hypotheses(
     if domain_context:
         augmented_input = f"{domain_context}\n\n---\n\nANALYST QUESTION:\n{user_input}"
 
-    # ── Ring 3: LLM call with fallback ───────────────────────────
+    span = tracer.start_span(
+        "mode1_hypotheses",
+        model="llama-3.3-70b-versatile",
+        metadata={"session_turn": state.session_turn},
+    ) if tracer else None
+
     try:
         raw_output = call_llm(
             system_prompt=system_prompt,
@@ -59,13 +62,18 @@ def generate_hypotheses(
             mode="mode1_hypotheses",
             prompt_version=PROMPT_VERSION,
         )
+        if span:
+            span.estimate_tokens(augmented_input, raw_output)
+            tracer.finish_span(span, status="success")
+
     except Exception as e:
+        if span:
+            tracer.finish_span(span, status="error", error=str(e))
         return llm_fallback_response("mode1_hypotheses", str(e))
 
     result = _parse_json(raw_output)
     _update_state(state, result, user_input, raw_output)
 
-    # Attach validation warning if any
     if validation.warning:
         result["_warning"] = validation.warning
 

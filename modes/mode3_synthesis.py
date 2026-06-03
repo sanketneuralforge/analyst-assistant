@@ -5,10 +5,9 @@ from pathlib import Path
 from core.context import ContextBrief
 from core.session import AnalyticalState
 from core.llm import call_llm
-from core.token_budget import trim_analytical_state
 from guardrails.input_guard import validate_mode3_input
-from core.token_budget import trim_analytical_state
 from guardrails.degradation import llm_fallback_response
+from core.token_budget import trim_analytical_state
 
 PROMPT_VERSION = "mode3_v1"
 
@@ -21,8 +20,8 @@ def synthesise_docs(
     documents: list[str],
     context: ContextBrief,
     state: AnalyticalState,
+    tracer=None,
 ) -> dict:
-    # ── Ring 1: Input validation ─────────────────────────────────
     validation = validate_mode3_input(documents)
     if not validation.is_valid:
         return {
@@ -52,7 +51,12 @@ def synthesise_docs(
 {trim_analytical_state(state)}
 """
 
-    # ── Ring 3: LLM call with fallback ───────────────────────────
+    span = tracer.start_span(
+        "mode3_synthesis",
+        model="llama-3.3-70b-versatile",
+        metadata={"source_count": len(documents)},
+    ) if tracer else None
+
     try:
         raw_output = call_llm(
             system_prompt=system_prompt,
@@ -60,7 +64,13 @@ def synthesise_docs(
             mode="mode3_synthesis",
             prompt_version=PROMPT_VERSION,
         )
+        if span:
+            span.estimate_tokens(formatted_docs, raw_output)
+            tracer.finish_span(span, status="success")
+
     except Exception as e:
+        if span:
+            tracer.finish_span(span, status="error", error=str(e))
         return llm_fallback_response("mode3_synthesis", str(e))
 
     result = _parse_json(raw_output)
