@@ -75,17 +75,17 @@ def render_nudges(suggestions: list[dict]):
 
 def render_validation_error(result: dict):
     """Show validation or guardrail errors prominently."""
+    if result is None:
+        return
     if err := result.get("_validation_error"):
         st.error(f"⛔ {err}")
-        return True
-    if err := result.get("_error"):
-        if not err.startswith("parse"):  # parse errors shown differently
-            st.error(f"⛔ {err}")
-            return True
-    return False
+    if result.get("_degraded"):
+        st.error(f"⛔ LLM unavailable: {result.get('_error', 'unknown error')}")
 
 def render_warnings(result: dict):
     """Show non-blocking warnings."""
+    if result is None:
+        return
     if w := result.get("_warning"):
         st.warning(f"💡 {w}")
     if ws := result.get("_session_warnings", []):
@@ -498,7 +498,7 @@ with tab3:
                 st.session_state.mode3_result = result
 
     if st.session_state.mode3_result is not None:
-        result = st.session_state.mode1_result
+        result = st.session_state.mode3_result
         render_validation_error(result)
         render_warnings(result)
 
@@ -581,7 +581,7 @@ with tab4:
                 st.session_state.mode4_result = result
 
     if st.session_state.mode4_result is not None:
-        result = st.session_state.mode1_result
+        result = st.session_state.mode4_result
         render_validation_error(result)
         render_warnings(result)
 
@@ -646,7 +646,7 @@ with tab5:
             st.session_state.mode5_result = result
 
     if st.session_state.mode5_result is not None:
-        result = st.session_state.mode1_result
+        result = st.session_state.mode5_result
         render_validation_error(result)
         render_warnings(result)
 
