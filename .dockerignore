@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Secrets — never baked into the image
+.env
+
+# Version control
+.git/
+.gitignore
+
+# Test / CI artefacts
+.pytest_cache/
+tests/evals/last_run.json
+
+# Runtime data (mounted as volumes at container start)
+db/
+auth/users.json
+
+# Editor / OS
+.DS_Store
+*.swp
+Untitled

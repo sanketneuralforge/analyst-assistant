@@ -1,6 +1,14 @@
 [server]
 fileWatcherType = "none"
+headless = true
 
 [logger]
 level = "error"
 messageFormat = "%(message)s"
+
+[theme]
+base = "dark"
+backgroundColor = "#0f1e2e"
+secondaryBackgroundColor = "#162436"
+textColor = "#e2e8f0"
+primaryColor = "#3b82f6"

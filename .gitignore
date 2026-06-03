@@ -11,3 +11,4 @@ wheels/
 .env
 db/
 *.db
+auth/users.json
