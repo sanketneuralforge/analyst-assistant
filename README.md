@@ -19,7 +19,7 @@
 ### Dashboard — Session Brief
 ![Session Brief](docs/screenshots/session_brief.png)
 
-### Mode 1 — Hypothesis Generator
+<!-- ### Mode 1 — Hypothesis Generator
 ![Mode 1 Hypotheses](docs/screenshots/mode1_hypotheses.png)
 
 ### Mode 2 — Code Drafter
@@ -35,7 +35,7 @@
 ![Mode 5 Narrative](docs/screenshots/mode5_narrative.png)
 
 ### Session Timeline
-![Session Timeline](docs/screenshots/session_timeline.png)
+![Session Timeline](docs/screenshots/session_timeline.png) -->
 
 ---
 
