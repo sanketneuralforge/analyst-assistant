@@ -11,6 +11,34 @@
 
 ---
 
+## Screenshots
+
+### Login
+![Login](docs/screenshots/login.png)
+
+### Dashboard — Session Brief
+![Session Brief](docs/screenshots/session_brief.png)
+
+### Mode 1 — Hypothesis Generator
+![Mode 1 Hypotheses](docs/screenshots/mode1_hypotheses.png)
+
+### Mode 2 — Code Drafter
+![Mode 2 Code](docs/screenshots/mode2_code.png)
+
+### Mode 3 — Document Synthesiser
+![Mode 3 Synthesis](docs/screenshots/mode3_synthesis.png)
+
+### Mode 4 — Stress Tester
+![Mode 4 Stress Test](docs/screenshots/mode4_stress.png)
+
+### Mode 5 — Narrative Writer
+![Mode 5 Narrative](docs/screenshots/mode5_narrative.png)
+
+### Session Timeline
+![Session Timeline](docs/screenshots/session_timeline.png)
+
+---
+
 ## What Is This?
 
 Most LLM tools are stateless — you send a prompt, get a response, and the agent forgets everything. Analyst Assistant is different. It maintains a structured `AnalyticalState` across the entire investigation session, accumulating hypotheses, evidence, and conclusions as you work through a problem.
@@ -178,45 +206,79 @@ analyst-assistant/
 
 ---
 
-## Quick Start
+## Running the App
 
-### Option 1 — Docker (recommended)
+### Prerequisites
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- A free [Groq API key](https://console.groq.com)
+
+---
+
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/sanketneuralforge/analyst-assistant.git
 cd analyst-assistant
-cp .env.example .env
-# Add your GROQ_API_KEY to .env
-docker-compose up
+uv sync
 ```
 
-- Streamlit UI: http://localhost:8501
-- FastAPI docs: http://localhost:8000/docs
-
-### Option 2 — Local
+### 2. Add your API key
 
 ```bash
-git clone https://github.com/sanketneuralforge/analyst-assistant.git
-cd analyst-assistant
-
-# Install UV if you don't have it
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install dependencies
-uv sync
-
-# Add your Groq API key
 cp .env.example .env
-echo "GROQ_API_KEY=your_key_here" >> .env
+```
 
-# Index the domain documents and method cards
-uv run python rag/ingest.py
+Open `.env` and set:
 
-# Run the Streamlit UI
-uv run streamlit run ui/app.py
+```
+GROQ_API_KEY=gsk_your_key_here
+```
 
-# Or run the FastAPI server
-uv run uvicorn api.main:app --reload --port 8000
+### 3. Start the app
+
+```bash
+./run.sh
+```
+
+This single command:
+1. Clears ports 8000 and 8501 if anything is already running there
+2. Starts the **FastAPI** agent core on `http://localhost:8000`
+3. Waits 3 seconds for the API to be ready
+4. Starts the **Streamlit** UI on `http://localhost:8501`
+5. Shuts down both cleanly when you press `Ctrl+C`
+
+| Service | URL |
+|---|---|
+| Streamlit UI | http://localhost:8501 |
+| FastAPI REST API | http://localhost:8000 |
+| Interactive API docs | http://localhost:8000/docs |
+
+**Default login:** `admin` / `admin123`
+
+---
+
+### Option — Docker
+
+```bash
+docker compose up --build
+```
+
+Same ports, no local Python setup needed. Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+---
+
+### Running services separately
+
+If you prefer two terminal windows:
+
+```bash
+# Terminal 1 — API server
+uv run uvicorn api.main:app --port 8000
+
+# Terminal 2 — Streamlit UI
+uv run streamlit run ui/app.py --server.port 8501
 ```
 
 ---

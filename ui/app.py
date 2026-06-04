@@ -583,6 +583,48 @@ hr {
     gap: 1rem;
 }
 
+/* ── Kill Streamlit's default page padding ────────────────── */
+.block-container {
+    padding-top: 0.75rem !important;
+    padding-bottom: 2rem !important;
+    max-width: 100% !important;
+}
+/* Remove the gap that appears below the unified header row */
+[data-testid="stHorizontalBlock"]:first-of-type {
+    margin-bottom: 0 !important;
+    align-items: center !important;
+}
+/* Right-align + vertically center the avatar column */
+[data-testid="stHorizontalBlock"]:first-of-type
+    > [data-testid="column"]:last-child {
+    display: flex !important;
+    justify-content: flex-end !important;
+    align-items: flex-start !important;
+    padding-top: 0 !important;
+}
+
+/* ── Topbar avatar (st.popover trigger) ───────────────────── */
+[data-testid="stPopover"] > button {
+    background: linear-gradient(135deg, var(--blue) 0%, var(--teal) 100%) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 50% !important;
+    width: 38px !important;
+    min-height: 38px !important;
+    height: 38px !important;
+    padding: 0 !important;
+    font-weight: 700 !important;
+    font-size: 0.82rem !important;
+    letter-spacing: 0.02em !important;
+    box-shadow: 0 2px 10px rgba(59,130,246,0.28) !important;
+    transition: box-shadow 0.2s ease, transform 0.15s ease !important;
+    line-height: 1 !important;
+}
+[data-testid="stPopover"] > button:hover {
+    box-shadow: 0 4px 18px rgba(59,130,246,0.5) !important;
+    transform: translateY(-1px) !important;
+}
+
 /* ── Verdict badges ───────────────────────────────────────── */
 .verdict-strong {
     display: inline-block;
@@ -741,83 +783,129 @@ def render_warnings(result: dict):
             st.warning(f"⚠️ Code: {w}")
 
 
+# ── Unified page header ───────────────────────────────────────────
+def render_page_header(context=None, session_id="—"):
+    """
+    Single header row rendered at the top of every page.
+    Left: session info (when briefed) or empty.
+    Right: circular avatar popover with settings + sign-out.
+    """
+    _ud = st.session_state.get("user_data", {})
+    _cu = st.session_state.get("current_user", "user")
+    _dn = _ud.get("display_name", _cu.title())
+    _role = _ud.get("role", "user")
+    _initials = "".join(w[0].upper() for w in _dn.split()[:2]) or "?"
+
+    left_col, right_col = st.columns([1, 0.07], gap="small", vertical_alignment="top")
+
+    with left_col:
+        if context:
+            st.markdown(f"""
+            <div class="session-header">
+                <div style="flex:1;">
+                    <div style="font-family:'Playfair Display',serif;font-size:1.4rem;
+                                font-weight:600;color:#e2e8f0;letter-spacing:-0.02em;">
+                        {context.company_name}
+                    </div>
+                    <div style="font-size:0.82rem;color:#94a3b8;margin-top:0.2rem;">
+                        <span style="color:#3b82f6;font-weight:500;">{context.primary_metric}</span>
+                        &nbsp;·&nbsp;{context.time_period}
+                        &nbsp;·&nbsp;{context.audience}
+                    </div>
+                </div>
+                <div style="font-family:'DM Mono',monospace;font-size:0.72rem;
+                            color:#475569;letter-spacing:0.05em;">
+                    SESSION&nbsp;·&nbsp;{session_id.upper()}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with right_col:
+        with st.popover(_initials, use_container_width=False):
+
+            # ── Profile header ───────────────────────────────────
+            st.markdown(f"""
+            <div style="display:flex;align-items:center;gap:0.75rem;
+                        padding:0.5rem 0 0.75rem 0;
+                        border-bottom:1px solid var(--border);margin-bottom:0.75rem;">
+                <div style="width:40px;height:40px;border-radius:50%;flex-shrink:0;
+                            background:linear-gradient(135deg,var(--blue),var(--teal));
+                            display:flex;align-items:center;justify-content:center;
+                            font-weight:700;font-size:0.9rem;color:white;">
+                    {_initials}
+                </div>
+                <div>
+                    <div style="font-weight:600;font-size:0.9rem;color:var(--text);">
+                        {_dn}
+                    </div>
+                    <div style="font-size:0.72rem;color:var(--blue);font-weight:500;
+                                letter-spacing:0.06em;text-transform:uppercase;">
+                        {_role}
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # ── Appearance ───────────────────────────────────────
+            st.markdown("**Appearance**")
+            _theme_keys   = list(THEMES.keys())
+            _theme_labels = [THEMES[k]["name"] for k in _theme_keys]
+            _cur_idx = _theme_keys.index(st.session_state.get("user_theme", "navy"))
+            _new_theme_label = st.selectbox(
+                "Theme", _theme_labels, index=_cur_idx, key="tb_theme_select"
+            )
+            _new_theme_key = _theme_keys[_theme_labels.index(_new_theme_label)]
+
+            _font_opts = ["small", "medium", "large"]
+            _cur_font  = _font_opts.index(st.session_state.get("user_font_size", "medium"))
+            _new_font  = st.selectbox(
+                "Font size", _font_opts, index=_cur_font, key="tb_font_select"
+            )
+            if st.button("Save appearance", use_container_width=True, key="tb_save_appearance"):
+                st.session_state.user_theme     = _new_theme_key
+                st.session_state.user_font_size = _new_font
+                update_user_preference(_cu, "theme", _new_theme_key)
+                update_user_preference(_cu, "font_size", _new_font)
+                st.toast("Appearance saved!", icon="✅")
+                st.rerun()
+
+            st.divider()
+
+            # ── Security ─────────────────────────────────────────
+            st.markdown("**Change password**")
+            with st.form("tb_pw_form"):
+                _old_pw  = st.text_input("Current password", type="password", key="tb_cpw_old")
+                _new_pw  = st.text_input("New password",     type="password", key="tb_cpw_new")
+                _conf_pw = st.text_input("Confirm new",      type="password", key="tb_cpw_conf")
+                if st.form_submit_button("Update password", use_container_width=True):
+                    if not _old_pw or not _new_pw:
+                        st.error("Fill in all fields.")
+                    elif _new_pw != _conf_pw:
+                        st.error("Passwords don't match.")
+                    elif len(_new_pw) < 6:
+                        st.error("Minimum 6 characters.")
+                    elif change_password(_cu, _old_pw, _new_pw):
+                        st.success("Password updated!")
+                    else:
+                        st.error("Current password is incorrect.")
+
+            st.divider()
+
+            # ── Sign out ─────────────────────────────────────────
+            if st.button("🚪 Sign Out", use_container_width=True, key="tb_signout"):
+                _keep = {"user_theme", "user_font_size"}
+                for _k in list(st.session_state.keys()):
+                    if _k not in _keep:
+                        del st.session_state[_k]
+                st.rerun()
+
+
 # ════════════════════════════════════════════════════════════════
 # SIDEBAR
 # ════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.title("🧠 Analyst Assistant")
     st.caption("Analytical thought partner")
-    st.markdown("---")
-
-    # ── Profile card ─────────────────────────────────────────────
-    _ud = st.session_state.get("user_data", {})
-    _cu = st.session_state.get("current_user", "user")
-    _dn = _ud.get("display_name", _cu.title())
-    _role = _ud.get("role", "user")
-    _initials = "".join(w[0].upper() for w in _dn.split()[:2]) or "?"
-    st.markdown(f"""
-    <div style="display:flex;align-items:center;gap:0.75rem;
-                padding:0.75rem 1rem;
-                background:var(--card);border:1px solid var(--border);
-                border-radius:10px;margin-bottom:0.5rem;">
-        <div style="width:36px;height:36px;border-radius:50%;flex-shrink:0;
-                    background:linear-gradient(135deg,var(--blue),var(--teal));
-                    display:flex;align-items:center;justify-content:center;
-                    font-weight:700;font-size:0.8rem;color:white;">
-            {_initials}
-        </div>
-        <div style="min-width:0;">
-            <div style="font-weight:600;font-size:0.88rem;
-                        color:var(--text);white-space:nowrap;overflow:hidden;
-                        text-overflow:ellipsis;">{_dn}</div>
-            <div style="font-size:0.72rem;color:var(--blue);
-                        font-weight:500;letter-spacing:0.06em;
-                        text-transform:uppercase;">{_role}</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── Settings expander ─────────────────────────────────────────
-    with st.expander("⚙️ Settings"):
-        st.markdown("**Appearance**")
-        _theme_keys   = list(THEMES.keys())
-        _theme_labels = [THEMES[k]["name"] for k in _theme_keys]
-        _cur_idx = _theme_keys.index(st.session_state.get("user_theme", "navy"))
-        _new_theme_label = st.selectbox(
-            "Theme", _theme_labels, index=_cur_idx, key="theme_select"
-        )
-        _new_theme_key = _theme_keys[_theme_labels.index(_new_theme_label)]
-
-        _font_opts = ["small", "medium", "large"]
-        _cur_font  = _font_opts.index(st.session_state.get("user_font_size", "medium"))
-        _new_font  = st.selectbox("Font size", _font_opts, index=_cur_font, key="font_select")
-
-        if st.button("Save appearance", use_container_width=True):
-            st.session_state.user_theme    = _new_theme_key
-            st.session_state.user_font_size = _new_font
-            update_user_preference(_cu, "theme", _new_theme_key)
-            update_user_preference(_cu, "font_size", _new_font)
-            st.toast("Appearance saved!", icon="✅")
-            st.rerun()
-
-        st.markdown("---")
-        st.markdown("**Change password**")
-        with st.form("change_pw_form"):
-            _old_pw  = st.text_input("Current password", type="password", key="cpw_old")
-            _new_pw  = st.text_input("New password",     type="password", key="cpw_new")
-            _conf_pw = st.text_input("Confirm new",      type="password", key="cpw_conf")
-            if st.form_submit_button("Update password", use_container_width=True):
-                if not _old_pw or not _new_pw:
-                    st.error("Fill in all fields.")
-                elif _new_pw != _conf_pw:
-                    st.error("Passwords don't match.")
-                elif len(_new_pw) < 6:
-                    st.error("Minimum 6 characters.")
-                elif change_password(_cu, _old_pw, _new_pw):
-                    st.success("Password updated!")
-                else:
-                    st.error("Current password is incorrect.")
-
     st.markdown("---")
 
     # ── API status indicator ──────────────────────────────────────
@@ -1054,21 +1142,13 @@ with st.sidebar:
         st.session_state.last_suggestions = []
         st.rerun()
 
-    # ── Sign out ──────────────────────────────────────────────────
-    if st.button("🚪 Sign Out", use_container_width=True):
-        _keep = {"user_theme", "user_font_size"}
-        for _k in list(st.session_state.keys()):
-            if _k not in _keep:
-                del st.session_state[_k]
-        st.rerun()
-
-
 # ════════════════════════════════════════════════════════════════
 # MAIN AREA
 # ════════════════════════════════════════════════════════════════
 if not st.session_state.briefed:
+    render_page_header()
     st.markdown("""
-    <div style="padding: 2rem 0 1rem 0;">
+    <div style="padding: 1rem 0 1rem 0;">
         <div style="font-family: 'Playfair Display', serif; font-size: 2.8rem;
                     font-weight: 600; letter-spacing: -0.03em; color: #e2e8f0;
                     line-height: 1.1; margin-bottom: 0.5rem;">
@@ -1122,25 +1202,7 @@ if not st.session_state.briefed:
 context = st.session_state.context_brief
 _sid = st.session_state.api_session_id or "—"
 
-st.markdown(f"""
-<div class="session-header">
-    <div style="flex: 1;">
-        <div style="font-family: 'Playfair Display', serif; font-size: 1.4rem;
-                    font-weight: 600; color: #e2e8f0; letter-spacing: -0.02em;">
-            {context.company_name}
-        </div>
-        <div style="font-size: 0.82rem; color: #94a3b8; margin-top: 0.2rem;">
-            <span style="color: #3b82f6; font-weight: 500;">{context.primary_metric}</span>
-            &nbsp;·&nbsp; {context.time_period}
-            &nbsp;·&nbsp; {context.audience}
-        </div>
-    </div>
-    <div style="font-family: 'DM Mono', monospace; font-size: 0.72rem;
-                color: #475569; letter-spacing: 0.05em;">
-        SESSION · {_sid.upper()}
-    </div>
-</div>
-""", unsafe_allow_html=True)
+render_page_header(context=context, session_id=_sid)
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "💡 Mode 1 — Hypotheses",
@@ -1498,11 +1560,22 @@ with tab5:
                     st.markdown(f"**Claim:** {flag['claim']}")
                     st.markdown(f"**Reason flagged:** {flag['reason']}")
 
-        st.markdown("---")
-        col1, col2, col3 = st.columns(3)
-        col1.markdown(f"**✅ What we know:**\n{result.get('what_we_know', '')}")
-        col2.markdown(f"**❓ What we don't know:**\n{result.get('what_we_dont_know', '')}")
-        col3.markdown(f"**➡️ Next step:**\n{result.get('recommended_next_step', '')}")
+        what_we_know = result.get("what_we_know", "")
+        what_we_dont_know = result.get("what_we_dont_know", "")
+        next_step = result.get("recommended_next_step", "")
+
+        if any([what_we_know, what_we_dont_know, next_step]):
+            st.markdown("---")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown("**✅ What we know:**")
+                st.markdown(what_we_know if what_we_know else "_Not yet determined_")
+            with col2:
+                st.markdown("**❓ What we don't know:**")
+                st.markdown(what_we_dont_know if what_we_dont_know else "_Not yet determined_")
+            with col3:
+                st.markdown("**➡️ Next step:**")
+                st.markdown(next_step if next_step else "_Not yet determined_")
 
 
 # ════════════════════════════════════════════════════════════════

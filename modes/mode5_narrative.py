@@ -61,6 +61,7 @@ def draft_narrative(
             user_message=user_input,
             mode="mode5_narrative",
             prompt_version=PROMPT_VERSION,
+            max_tokens=4096,
         )
         if span:
             span.estimate_tokens(user_input, raw_output)
@@ -85,18 +86,45 @@ def draft_narrative(
 
 
 def _parse_json(raw: str) -> dict:
+    import re
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
         cleaned = "\n".join(lines[1:-1])
+
     start = cleaned.find("{")
     end = cleaned.rfind("}") + 1
     if start == -1 or end == 0:
         return _error_response("No JSON found")
+
+    json_str = cleaned[start:end]
+
     try:
-        return json.loads(cleaned[start:end])
-    except json.JSONDecodeError as e:
-        return _error_response(str(e), raw)
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        # Narrative field contains literal newlines — fix them
+        try:
+            narrative_match = re.search(
+                r'"narrative"\s*:\s*"(.*?)",\s*"flags"',
+                json_str,
+                re.DOTALL,
+            )
+            if narrative_match:
+                raw_narrative = narrative_match.group(1)
+                safe_narrative = (
+                    raw_narrative
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t")
+                )
+                json_str = (
+                    json_str[:narrative_match.start(1)]
+                    + safe_narrative
+                    + json_str[narrative_match.end(1):]
+                )
+            return json.loads(json_str)
+        except Exception as e:
+            return _error_response(str(e), raw)
 
 
 def _error_response(reason: str, raw: str = "") -> dict:

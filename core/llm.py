@@ -25,6 +25,7 @@ def call_llm(
     prompt_version: str = "unknown",
     temperature: float | None = None,
     max_retries: int = 3,
+    max_tokens: int | None = None,
 ) -> str:
     """
     Single entry point for all LLM calls.
@@ -43,7 +44,7 @@ def call_llm(
             response = client.chat.completions.create(
                 model=model,
                 temperature=temp,
-                max_tokens=2048,
+                max_tokens=max_tokens or 2048,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message},
