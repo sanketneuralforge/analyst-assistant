@@ -11,6 +11,14 @@
 
 ---
 
+## Demo
+
+![Analyst Assistant Demo](docs/media/analyst-assistant-demo.gif)
+
+Short product loop for README previews and social posts.
+
+---
+
 ## Screenshots
 
 ### Login
